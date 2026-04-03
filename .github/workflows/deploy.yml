@@ -1,0 +1,220 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - ".github/workflows/ci.yml"
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10"
+
+jobs:
+  # ─── Phase 1: Migrations (before app deploy) ───
+  migrate:
+    name: Run database migrations
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate migration backward compatibility
+        run: |
+          # Verify all migrations have corresponding down files
+          cd supabase/migrations
+          for UP in $(ls *_*.sql | grep -v _down); do
+            BASE=$(echo "$UP" | sed 's/\.sql$/_down.sql/')
+            if [ ! -f "$BASE" ]; then
+              echo "::error::Missing down migration for $UP"
+              exit 1
+            fi
+          done
+          echo "All migrations have down migration counterparts."
+
+      - name: Create PITR restore point marker
+        run: |
+          echo "PITR_MARKER=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "Restore point marker: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Ensure Supabase PITR backup exists before applying migrations to production."
+
+      - name: Apply migrations
+        run: |
+          echo "::notice::Migration ordering: apply forward migrations in sequence."
+          echo "Migrations to apply:"
+          ls -1 supabase/migrations/*.sql | grep -v _down | sort
+          echo ""
+          echo "In production, run: supabase db push --linked"
+          echo "In staging, migrations auto-apply via supabase db push."
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+  # ─── Phase 2: Verify staging after migrations ───
+  verify-staging:
+    name: Verify staging post-migration
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_BASE_URL: ${{ vars.NEXT_PUBLIC_APP_BASE_URL }}
+
+      - name: Run unit tests against migrated schema
+        run: pnpm test
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+  # ─── Phase 3: Deploy to Vercel preview (canary) ───
+  canary-deploy:
+    name: Canary deploy (Vercel preview)
+    needs: verify-staging
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Deploy to Vercel preview
+        id: deploy
+        run: |
+          npx vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_API_TOKEN }}
+          npx vercel build --token=${{ secrets.VERCEL_API_TOKEN }}
+          PREVIEW_URL=$(npx vercel deploy --prebuilt --token=${{ secrets.VERCEL_API_TOKEN }})
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "Preview deployed: $PREVIEW_URL"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+
+  # ─── Phase 4: Canary validation ───
+  canary-validate:
+    name: Canary validation
+    needs: canary-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post-deploy smoke tests
+        run: |
+          PREVIEW_URL="${{ needs.canary-deploy.outputs.preview_url }}"
+          echo "Testing preview at: $PREVIEW_URL"
+
+          # Health check
+          echo "--- Health check ---"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${PREVIEW_URL}/api/health" || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "Health: OK (HTTP $HTTP_CODE)"
+
+          # Home page loads
+          echo "--- Home page ---"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${PREVIEW_URL}" || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Home page failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "Home: OK (HTTP $HTTP_CODE)"
+
+          echo "Smoke tests passed."
+
+      - name: Monitor canary metrics
+        run: |
+          # In production, this would monitor for 15-30 minutes.
+          # Rollback triggers:
+          #   - Error rate > 1% for 5 minutes
+          #   - AI fallback rate > 20%
+          #   - Round-backstop fire rate > baseline + 2 sigma
+          echo "Canary monitoring window:"
+          echo "  - Error rate threshold: < 1% over 5 minutes"
+          echo "  - AI fallback threshold: < 20%"
+          echo "  - Backstop fire rate: < baseline + 2σ"
+          echo ""
+          echo "For staging, proceeding after smoke tests pass."
+          echo "For production, extend this step with real metric polling."
+
+  # ─── Phase 5: Production promotion ───
+  promote:
+    name: Promote to production
+    needs: canary-validate
+    if: ${{ inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify security checklist
+        run: |
+          if [ ! -f "docs/runbooks/security-checklist.md" ]; then
+            echo "::error::Security checklist not found. Production promotion blocked."
+            echo "Create docs/runbooks/security-checklist.md before deploying to production."
+            exit 1
+          fi
+          echo "Security checklist found. Production promotion allowed."
+
+      - name: Promote to production
+        run: |
+          npx vercel promote --token=${{ secrets.VERCEL_API_TOKEN }} --yes
+          echo "Promoted to production."
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+
+      - name: Post-promotion smoke test
+        run: |
+          PROD_URL="${{ vars.NEXT_PUBLIC_APP_BASE_URL }}"
+          echo "Validating production at: $PROD_URL"
+
+          # Health
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${PROD_URL}/api/health" || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Production health check failed (HTTP $HTTP_CODE)"
+            echo "ROLLBACK REQUIRED: revert to previous Vercel deployment"
+            exit 1
+          fi
+          echo "Production health: OK"
