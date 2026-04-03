@@ -49,6 +49,16 @@ The system follows a serverless-first architecture with real-time capabilities.
 - Heebo for body text, Rubik for headings and the letter display
 - Responsive: mobile-first (primary devices are phones and tablets)
 
+### Accessibility
+- **Color + text:** Validation results and answer states must use icons/text labels alongside color (e.g., ✓/✗ icons, "תקין"/"לא תקין" labels). Never rely on color alone.
+- **Keyboard navigation:** All game controls (category inputs, help buttons, "Done!" button, modal dialogs) must be fully operable via keyboard. Tab order follows visual RTL layout. Focus trap inside modals.
+- **Focus management:** On round start, focus moves to the first category input. On modal open, focus moves into the modal. On modal close, focus returns to the trigger element.
+- **ARIA live regions:** Real-time game events (player joined, player done, timer warnings, round end) announced via `aria-live="polite"` regions. Timer crossing 30s and 10s thresholds announced as `aria-live="assertive"`.
+- **Reduced motion:** Respect `prefers-reduced-motion`. Letter spinner animation, background drift, and gradient shifts replaced with instant transitions when enabled.
+- **Touch targets:** Minimum 44×44px for all interactive elements. Category cards and help buttons sized for comfortable thumb interaction on phones.
+- **Form labeling:** All inputs have visible `<label>` elements. Validation errors associated via `aria-describedby`. Error messages are text, not color-only.
+- **Semantic structure:** Pages use proper heading hierarchy (`h1` for page title, `h2` for sections). Category grid uses `<fieldset>` + `<legend>` for grouping.
+
 ### Supabase (over Firebase)
 **Why Supabase over Firebase:**
 1. **Postgres** -- relational data model fits naturally (players, games, rounds, answers are relational). Firebase's document model would require denormalization and client-side joins.
@@ -116,6 +126,7 @@ CREATE TABLE players (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   avatar TEXT NOT NULL DEFAULT 'default',
+  age_group TEXT DEFAULT 'child' CHECK (age_group IN ('child', 'teen', 'adult')),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -125,11 +136,29 @@ CREATE TABLE player_stats (
   games_played INT DEFAULT 0,
   games_won INT DEFAULT 0,
   total_score INT DEFAULT 0,
+  avg_score_per_round NUMERIC(5,1) DEFAULT 0,
   unique_answers_count INT DEFAULT 0,
   fastest_answer_ms INT,
   strongest_category TEXT,
   weakest_category TEXT
 );
+
+-- player_stats is updated by a Postgres trigger that fires after each game_session
+-- transitions to 'finished'. The trigger recalculates from the answers table
+-- (single source of truth) rather than incrementing counters.
+CREATE OR REPLACE FUNCTION update_player_stats() RETURNS TRIGGER AS $$
+BEGIN
+  -- Recalculate stats for all players in the finished game
+  -- from answers + rounds tables (authoritative source)
+  PERFORM pg_notify('stats_update', NEW.id::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_stats
+  AFTER UPDATE OF status ON game_sessions
+  FOR EACH ROW WHEN (NEW.status = 'finished')
+  EXECUTE FUNCTION update_player_stats();
 ```
 
 ### Game Session
@@ -163,6 +192,11 @@ CREATE TABLE game_sessions (
   finished_at TIMESTAMPTZ
 );
 
+-- AI competitors get real rows in the players table with is_ai=true.
+-- This ensures game_players FK is satisfied and AI answers can reference
+-- a valid player_id throughout the system.
+ALTER TABLE players ADD COLUMN is_ai BOOLEAN DEFAULT false;
+
 CREATE TABLE game_players (
   game_id UUID REFERENCES game_sessions(id) ON DELETE CASCADE,
   player_id UUID REFERENCES players(id),
@@ -195,7 +229,7 @@ CREATE TABLE rounds (
   game_id UUID REFERENCES game_sessions(id) ON DELETE CASCADE,
   round_number INT NOT NULL,
   letter CHAR(1) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'playing' CHECK (status IN ('playing', 'reviewing', 'completed')),
+  status TEXT NOT NULL DEFAULT 'playing' CHECK (status IN ('playing', 'reviewing', 'manual_review', 'completed')),
   started_at TIMESTAMPTZ DEFAULT now(),
   ended_at TIMESTAMPTZ,
   ended_by TEXT CHECK (ended_by IN ('timer', 'all_done')),
@@ -231,21 +265,28 @@ CREATE TABLE rounds (
 CREATE TABLE answers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   round_id UUID REFERENCES rounds(id) ON DELETE CASCADE,
-  player_id UUID NOT NULL,
+  player_id UUID NOT NULL REFERENCES players(id),
   category TEXT NOT NULL,
   answer_text TEXT,
-  submitted_at TIMESTAMPTZ,
+  submitted_at TIMESTAMPTZ,  -- server-recorded: set when player clicks "Done!" (see Speed Bonus section)
   is_valid BOOLEAN,
   starts_with_letter BOOLEAN,
   is_real_word BOOLEAN,
   matches_category BOOLEAN,
   ai_explanation TEXT,
-  is_unique BOOLEAN,
+  is_unique BOOLEAN,          -- computed server-side in a transaction with all players' answers
   help_used TEXT DEFAULT 'none' CHECK (help_used IN ('none', 'hint', 'full')),
   speed_bonus BOOLEAN DEFAULT false,
   score INT DEFAULT 0,
   UNIQUE (round_id, player_id, category)
 );
+
+-- Indexes for hot query paths
+CREATE INDEX idx_answers_round_id ON answers(round_id);
+CREATE INDEX idx_answers_player_id ON answers(player_id);
+CREATE INDEX idx_rounds_game_id ON rounds(game_id);
+CREATE INDEX idx_game_players_player_id ON game_players(player_id);
+CREATE INDEX idx_rooms_code ON rooms(code) WHERE status != 'closed';
 ```
 
 ### Room (Multiplayer)
@@ -270,8 +311,12 @@ CREATE TABLE rooms (
   created_by UUID REFERENCES players(id),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_game', 'closed')),
   max_players INT DEFAULT 8,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '1 hour')
 );
+
+-- Periodic cleanup: pg_cron job or Supabase Edge Function runs every 15 minutes
+-- to close expired rooms and mark their games as 'finished'.
 ```
 
 ### Statistics / History
@@ -292,7 +337,12 @@ SELECT
 FROM answers a
 JOIN rounds r ON r.id = a.round_id
 GROUP BY a.player_id, a.category;
+
+CREATE UNIQUE INDEX idx_player_category_stats
+  ON player_category_stats(player_id, category);
 ```
+
+**Refresh strategy:** The materialized view is refreshed concurrently (non-blocking) by the same `update_player_stats` trigger that fires when a game finishes. `REFRESH MATERIALIZED VIEW CONCURRENTLY` requires the unique index above. For the profile page, this staleness (up to one game behind) is acceptable. The leaderboard page queries the view directly.
 
 
 ## 4. AI Integration Design
@@ -301,7 +351,7 @@ GROUP BY a.player_id, a.category;
 
 **Prompt Design:**
 
-All answers for a round are validated in a single batch call to minimize latency and cost.
+All answers for a single player in a round are validated in one batch call. At round end, all players are validated in parallel (`Promise.all`), so a 4-player game makes 4 concurrent AI calls.
 
 ```
 System prompt:
@@ -357,7 +407,7 @@ Answers to validate:
 - Batch all answers per player into one call (~200-500ms with Claude Sonnet)
 - Validate all players in parallel (Promise.all)
 - Show a "validating..." spinner for max 3 seconds, then display results
-- If AI call exceeds 5s timeout, mark all answers as "pending review" and allow manual override by room host
+- If AI call exceeds 5s timeout, mark all answers as "pending review" and allow manual override by room host (see Manual Review Fallback below)
 
 ### Competitor Answer Generation (Solo Mode)
 
@@ -386,24 +436,29 @@ Categories: ["ארץ", "עיר", "חי", "צומח", "ילד", "ילדה", "מק
     "age": 8,
     "description": "second grader who knows common animals and countries but struggles with professions",
     "empty_probability": 25,
-    "mistake_probability": 15
+    "mistake_probability": 15,
+    "expectedScore": 30
   },
   {
     "name": "שירה",
     "age": 12,
     "description": "strong student who reads a lot, good vocabulary but sometimes overthinks",
     "empty_probability": 10,
-    "mistake_probability": 8
+    "mistake_probability": 8,
+    "expectedScore": 55
   },
   {
     "name": "אבי",
     "age": 40,
     "description": "casual adult player, solid general knowledge, occasionally blanks on singers",
     "empty_probability": 8,
-    "mistake_probability": 5
+    "mistake_probability": 5,
+    "expectedScore": 65
   }
 ]
 ```
+
+`expectedScore` is the estimated score per round for the competitor at their default difficulty. Used by the adaptive difficulty algorithm to decide when the player is dominating or struggling relative to each competitor.
 
 ### Adaptive Difficulty
 
@@ -476,8 +531,10 @@ Reuses the competitor generation prompt for a single category, returning one ans
 - Average game (5 rounds, 1 player solo): ~15 AI calls = ~$0.025/game
 
 **Implementation:**
-- Token bucket rate limiter in middleware using an in-memory store (or Supabase for distributed)
+- Token bucket rate limiter using a Supabase counter table (NOT in-memory — in-memory state is lost between serverless invocations on Vercel). A `rate_limits` table with `(key TEXT, count INT, window_start TIMESTAMPTZ)` and an atomic `increment_or_reset()` function.
 - Monthly budget cap via environment variable; disable AI features if exceeded (graceful degradation: use pre-generated word lists)
+
+**Auto-fill rate limit:** The second help click (auto-fill) hits `/api/ai/hint` with `mode=fill`. It shares the 2-per-round-per-player limit with hint calls — both are enforced server-side under the same counter.
 
 ### Fallback Strategy
 
@@ -498,6 +555,33 @@ Claude API call
     +-- 4xx (bad request) -> throw error (do not retry, this is a bug)
 ```
 
+**Circuit breaker:** If Claude fails 3 times within 60 seconds, the circuit opens and all subsequent calls go directly to OpenAI for 5 minutes. This prevents a Claude brownout from adding latency to every request via timeouts and retries.
+
+**Total AI failure (both providers down):**
+- **Validation:** All answers are marked `pending_review`. In multiplayer, the room host sees a "Review Answers" UI where they can manually mark each answer as valid/invalid. In solo mode, the game optimistically accepts all answers that start with the correct letter.
+- **Hint generation:** The help button is temporarily disabled with a "זמנית לא זמין" (temporarily unavailable) tooltip.
+- **Competitor generation (solo):** Fall back to pre-generated word lists (see below).
+
+### Manual Review Fallback
+
+When AI validation is unavailable or times out, the round enters a `manual_review` status (added to the round status enum: `'playing' | 'reviewing' | 'manual_review' | 'completed'`).
+
+In manual review:
+1. All answers are displayed in the results table with a "?" status instead of ✓/✗.
+2. **Multiplayer:** The room host sees toggle buttons per answer to mark valid/invalid. Other players see "Host is reviewing..." Once the host confirms, scoring proceeds normally.
+3. **Solo:** Answers starting with the correct letter are auto-accepted. Others marked invalid.
+4. Manual review has a 2-minute timeout — any unreviewed answers default to "accepted" to avoid blocking.
+
+### Pre-generated Word Lists
+
+A static JSON file (`data/word-lists.json`) ships with the app, containing 5-10 valid answers per category per Hebrew letter. Used as fallback when AI is unavailable:
+
+- **Competitor generation:** AI competitors select from the word list with randomized omissions matching their difficulty profile.
+- **Budget exceeded:** When the monthly AI budget cap is hit, all AI features switch to word-list mode for the remainder of the month.
+- **Hint auto-fill:** Returns a random valid answer from the list for the category+letter combination.
+
+The word list does NOT replace AI validation — it only provides answers. When used as a fallback, uniqueness checking falls back to exact normalized string matching (no fuzzy match, since the answers come from a known-good list).
+
 
 ## 5. Multiplayer Architecture
 
@@ -513,9 +597,14 @@ Claude API call
 - WhatsApp-friendly: includes Open Graph meta tags with game name and a preview image
 - On open: if player has no profile, prompt for name + avatar; then join room
 
+**Join Rate Limiting:**
+- Max 5 join attempts per IP per minute (prevents brute-force code guessing).
+- After 3 consecutive invalid codes from the same IP, require a 30-second cooldown.
+- Enforced in the `/api/game/join` route handler using the Supabase rate_limits table.
+
 **Join Flow:**
 1. Player enters code or opens link
-2. API validates room exists and is `open`
+2. API validates room exists and is `open`, and join rate limit is not exceeded
 3. Player added to `game_players` table
 4. Supabase Realtime broadcasts `player_joined` event to all room members
 5. Room creator sees updated player list in lobby
@@ -537,6 +626,7 @@ Each game session subscribes to a channel: `game:{game_id}`
 | `timer_tick` | `{remaining_seconds}` | Server -> All (every 10s) |
 | `round_end` | `{round_id}` | Server -> All |
 | `answers_revealed` | `{round_id, results: [...]}` | Server -> All |
+| `host_changed` | `{new_host_id, reason}` | Server -> All |
 | `game_over` | `{final_scores: [...]}` | Server -> All |
 
 **State Authority:** The server (API routes + Supabase) is the authority for game state. Clients send actions; the server validates, updates the database, and broadcasts the new state. Clients never write game state directly.
@@ -573,11 +663,19 @@ GAME_OVER (final results)
 
 ### Handling Disconnections and Reconnections
 
-- **Heartbeat:** Client sends a ping every 15 seconds via the Realtime channel. Server tracks `last_seen` per player.
-- **Disconnect detection:** If no heartbeat for 45 seconds, player is marked `disconnected` (visible to others but NOT removed from game).
+- **Heartbeat:** Client writes `last_seen` to `game_players` table every 15 seconds via a direct Supabase `UPDATE` (not via the Realtime channel — heartbeat must work independently of the channel it monitors).
+- **Disconnect detection:** A Supabase Edge Function runs on a 30-second cron. If a player's `last_seen` is older than 45 seconds, they are marked `disconnected` (visible to others but NOT removed from game).
 - **Reconnection:** Player reopens the app/tab. Client reads current game state from Supabase and resubscribes to the channel. Seamless -- no data loss since all state is server-side.
 - **Abandoned player:** If disconnected for >5 minutes during a round, their unanswered categories score 0 for that round. They can still rejoin for subsequent rounds.
 - **Round timer:** Does NOT pause for disconnections. The game continues.
+
+### Host Transfer
+
+If the host disconnects for >60 seconds during a game:
+1. The server automatically transfers host privileges to the next player by join order.
+2. A `host_changed` event is broadcast to all players: `{new_host_id, reason: "disconnect"}`.
+3. The new host gains the "Next Round" and "End Game" controls.
+4. If the original host reconnects, they rejoin as a regular player (no automatic re-promotion to avoid confusion).
 
 ### "Done!" Button Logic
 
@@ -589,6 +687,15 @@ GAME_OVER (final results)
    - Timer expires
 5. Whichever comes first. On round end, all remaining unlocked answers are submitted as-is.
 6. Server then triggers batch validation for all players' answers.
+
+### Timer Implementation (Serverless Constraint)
+
+Vercel serverless functions cannot run persistent timers. The round timer is implemented as a hybrid client-server approach:
+
+1. **Round start:** The server records `started_at` and `timer_seconds` in the `rounds` table. The authoritative end time is `started_at + timer_seconds`.
+2. **Client-side:** Each client runs its own countdown timer for UI display. Timer drift is acceptable for display purposes.
+3. **Round end trigger:** When any client's timer expires, it calls `POST /api/game/action` with action `timer_expired`. The API route checks `now() >= started_at + timer_seconds` server-side before accepting the transition. This prevents early termination from clock skew.
+4. **Backstop:** A Supabase Edge Function on a 30-second cron checks for rounds where `status = 'playing'` and `started_at + timer_seconds < now()`. Any expired rounds are force-ended. This handles the case where all clients disconnect before the timer fires.
 
 
 ## 6. Frontend Component Tree
@@ -613,15 +720,19 @@ app/
     page.tsx              -- Join room redirect
   api/
     ai/
-      validate/route.ts   -- Batch answer validation
-      generate/route.ts   -- Competitor answer generation
-      hint/route.ts       -- Hint generation
+      validate/route.ts   -- POST: Batch answer validation
+      generate/route.ts   -- POST: Competitor answer generation (solo mode)
+      hint/route.ts       -- POST: Hint generation (mode=hint|fill)
     game/
-      create/route.ts     -- Create game session + room
-      join/route.ts       -- Join room
-      action/route.ts     -- Game state transitions (start, done, next-round, end)
+      create/route.ts     -- POST: Create game session (+ room for multiplayer)
+      join/route.ts       -- POST: Join room by code
+      start/route.ts      -- POST: Host starts the game (transition waiting→playing)
+      done/route.ts       -- POST: Player submits "Done!" for current round
+      next-round/route.ts -- POST: Host advances to next round
+      end/route.ts        -- POST: Host ends the game
+      [id]/route.ts       -- GET: Current game state (for reconnection)
     player/
-      route.ts            -- CRUD player profile
+      route.ts            -- GET/POST/PUT: Player profile CRUD
 ```
 
 ### Shared Components
@@ -665,6 +776,39 @@ components/
     StatsDisplay.tsx      -- Player statistics
     GameHistory.tsx       -- Past games list
 ```
+
+### API Contracts
+
+All API routes return a consistent envelope:
+
+```typescript
+// Success
+{ "ok": true, "data": { ... } }
+
+// Error
+{ "ok": false, "error": { "code": "ROOM_NOT_FOUND", "message": "Room does not exist or has expired" } }
+```
+
+**Key endpoints:**
+
+| Endpoint | Method | Auth | Request Body | Response `data` |
+|---|---|---|---|---|
+| `/api/player` | POST | None | `{name, avatar, age_group}` | `{id, name, avatar}` |
+| `/api/player` | PUT | Supabase Auth | `{name?, avatar?}` | `{id, name, avatar}` |
+| `/api/game/create` | POST | Supabase Auth | `{mode, category_mode, categories?, timer_seconds, helps_per_round}` | `{game_id, room_code?}` |
+| `/api/game/join` | POST | Supabase Auth | `{code}` | `{game_id, players[]}` |
+| `/api/game/start` | POST | Supabase Auth (host) | `{game_id}` | `{round_id, letter}` |
+| `/api/game/done` | POST | Supabase Auth | `{round_id, answers: [{category, text, submitted_at}]}` | `{received: true}` |
+| `/api/game/next-round` | POST | Supabase Auth (host) | `{game_id}` | `{round_id, letter}` |
+| `/api/game/end` | POST | Supabase Auth (host) | `{game_id}` | `{final_scores[]}` |
+| `/api/game/[id]` | GET | Supabase Auth | — | Full game state for reconnection |
+| `/api/ai/validate` | POST | Internal (server-only) | `{letter, answers: [{category, text}]}` | `{validations[]}` |
+| `/api/ai/hint` | POST | Supabase Auth | `{round_id, category, letter, mode: "hint"\|"fill"}` | `{text}` |
+| `/api/ai/generate` | POST | Internal (server-only) | `{letter, categories[], competitors[]}` | `{competitor_answers[]}` |
+
+"Internal (server-only)" endpoints are called by other API routes, not by the client directly. They have no public URL and are invoked as function calls within the server.
+
+**Supabase database operations** use a 5-second timeout. If a query exceeds this, it is aborted and the API returns a 503.
 
 ### State Management
 
@@ -720,12 +864,16 @@ interface PlayerStore {
 2. New Game (Setup)
    -> Choose category mode (fixed/custom/random)
    -> If custom: show category editor
+   -> If random: server draws 8 categories from the full pool each round
+      Pool: ארץ, עיר, חי, צומח, ילד, ילדה, מקצוע, זמר/ת, אוכל, צבע, כלי,
+            משחק, סרט, שיר, ספר, מותג, ספורט, לבוש, גוף, ריהוט
+      (no repeats within a game session — tracked in game_sessions.used_categories)
    -> Choose timer (2/3/5/7 min)
    -> Click "Start"
 
 3. Game Start
    -> Create local game session
-   -> Generate 2-3 AI competitors (based on player age estimate from profile)
+   -> Generate 2-3 AI competitors (selected based on player's age_group from profile)
    -> Letter spin animation -> reveal letter
 
 4. Round Play
@@ -753,6 +901,15 @@ interface PlayerStore {
    -> Fun statistics
    -> Save to LocalStorage
    -> Share button (generates image)
+
+Crash Recovery (solo):
+   -> On app open, check "eretz-eir:current-game" in LocalStorage
+   -> If found and game status != 'finished':
+      Show "המשך משחק?" (Continue game?) dialog
+      -> Yes: restore game state, resume at the round that was in progress
+         AI competitor answers for the interrupted round are re-generated
+      -> No: discard the saved state, go to home screen
+   -> The current game key is updated after every "Done!" click and round transition
 ```
 
 ### Multiplayer Mode
@@ -809,13 +966,15 @@ function scoreAnswer(answer: ValidatedAnswer, allAnswers: ValidatedAnswer[]): An
       && a.is_valid
   );
 
+  // is_unique is computed server-side AFTER all players' answers are collected.
+  // Scoring runs in a single transaction per round to avoid race conditions.
   const isUnique = !sameCategory.some(a => fuzzyMatch(a.text, answer.text));
   const base = isUnique ? 10 : 5;
 
   // Speed bonus: was this player the first to submit a valid answer in this category?
   const validInCategory = allAnswers
     .filter(a => a.category === answer.category && a.is_valid)
-    .sort((a, b) => a.submitted_at - b.submitted_at);
+    .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime());
 
   const speedBonus = validInCategory[0]?.player_id === answer.player_id ? 3 : 0;
 
@@ -853,9 +1012,11 @@ function normalize(text: string): string {
 
 ### Speed Bonus Tracking
 
-Each answer records `submitted_at` -- the timestamp when the player typed the answer (set client-side on first non-empty input, updated on last keystroke). When the player clicks "Done!", all `submitted_at` timestamps are finalized.
+`submitted_at` is the server-side timestamp recorded when the player's "Done!" request arrives at the API. All answers from a single "Done!" submission share the same `submitted_at`. This prevents client-side clock manipulation from affecting speed bonuses.
 
-For solo mode, AI competitor `submitted_at` values are simulated: random delay between 15s and `timer_seconds * 0.8` from round start.
+The speed bonus rewards the first player to complete a category with a valid answer. Since all of a player's answers share one `submitted_at`, the bonus goes to the player who clicked "Done!" earliest (not who typed fastest within a round — that would require trusting client timestamps).
+
+For solo mode, AI competitor `submitted_at` values are simulated server-side: random delay between 15s and `timer_seconds * 0.8` from `round.started_at`.
 
 ### Help Usage Tracking
 
@@ -885,7 +1046,7 @@ function calculateFinalScore(player_id: string, allRounds: RoundResult[]): Final
       if (answer.is_unique) totalUnique++;
       if (answer.is_valid) totalValid++;
       if (answer.speed_bonus) {
-        const ms = answer.submitted_at - round.started_at;
+        const ms = new Date(answer.submitted_at).getTime() - new Date(round.started_at).getTime();
         fastestAnswerMs = Math.min(fastestAnswerMs, ms);
       }
     }
@@ -941,6 +1102,19 @@ interface LocalSettings {
 
 **Size management:** Keep last 50 games. Each game is ~2-5KB. Total LocalStorage usage stays under 500KB.
 
+### Authentication Model
+
+Supabase Auth with **anonymous sign-in** as the default. This provides a UUID-based identity without requiring email/password — ideal for a family game where the primary player is 9 years old.
+
+**Flow:**
+1. First app open → Supabase `signInAnonymously()` → gets a persistent anonymous session with a UUID.
+2. The UUID becomes the player's `id` in the `players` table. `auth.uid()` in RLS policies maps to this.
+3. Profile (name, avatar) is set after sign-in via `POST /api/player`.
+4. Session persists across browser refreshes via Supabase's cookie/localStorage token.
+5. **Optional upgrade:** Player can later link an email to their anonymous account for cross-device sync. Not required for v1 core flow.
+
+This means all RLS policies using `auth.uid()` work immediately — every client has a Supabase auth session, even without explicit login.
+
 ### Cloud Schema (Multiplayer + Profiles)
 
 All tables defined in Section 3. Additionally:
@@ -956,10 +1130,22 @@ CREATE POLICY "Players are viewable by everyone"
 CREATE POLICY "Players can update own profile"
   ON players FOR UPDATE USING (auth.uid() = id);
 
+-- Players can create their own profile (on first sign-in)
+CREATE POLICY "Players can insert own profile"
+  ON players FOR INSERT WITH CHECK (auth.uid() = id);
+
 -- Game data readable by participants
 CREATE POLICY "Game data readable by participants"
   ON game_sessions FOR SELECT
   USING (id IN (SELECT game_id FROM game_players WHERE player_id = auth.uid()));
+
+-- Players can create games
+CREATE POLICY "Players can create games"
+  ON game_sessions FOR INSERT WITH CHECK (created_by = auth.uid());
+
+-- Answers writable by the answer's player during an active round
+CREATE POLICY "Players can insert own answers"
+  ON answers FOR INSERT WITH CHECK (player_id = auth.uid());
 
 -- Answers readable by game participants (after round ends)
 CREATE POLICY "Answers readable after round"
@@ -970,10 +1156,17 @@ CREATE POLICY "Answers readable after round"
       JOIN game_sessions g ON g.id = r.game_id
       JOIN game_players gp ON gp.game_id = g.id
       WHERE gp.player_id = auth.uid()
-        AND r.status IN ('reviewing', 'completed')
+        AND r.status IN ('reviewing', 'manual_review', 'completed')
     )
   );
 ```
+
+### Data Retention
+
+- **Active rooms:** Expire per `rooms.expires_at` (1 hour if game never starts, extended to `game.finished_at + 30min` once started).
+- **Completed games:** Retained for 1 year. A monthly Supabase Edge Function deletes `game_sessions` (cascading to `game_players`, `rounds`, `answers`) older than 1 year.
+- **Player profiles:** Retained indefinitely while active. Profiles with no game activity for 1 year are soft-deleted (marked `deleted_at`).
+- **AI player records:** Cleaned up with their parent game session (cascading delete via `game_players`).
 
 ### Sync Strategy
 
@@ -984,12 +1177,21 @@ LocalStorage <---> Supabase
 **Direction: Local-first, cloud-authoritative for multiplayer.**
 
 1. **Profile:** Written to LocalStorage immediately. On next online connection, upserted to Supabase. On app load, if Supabase profile is newer, it overwrites local.
-2. **Solo games:** Stored only in LocalStorage. Optionally synced to Supabase if player is authenticated (for cross-device stats).
+2. **Solo games:** Stored only in LocalStorage. Solo game results are NOT synced to Supabase in v1 — cloud stats reflect multiplayer games only. If a player later links an email account (optional upgrade), solo stats remain local-only. This is a known limitation; cross-device solo stats may be added in a future version.
 3. **Multiplayer games:** Supabase is the source of truth. LocalStorage caches the current game for crash recovery only.
 4. **Conflict resolution:** Last-write-wins using `updated_at` timestamps. For multiplayer, server always wins.
 
 
-## 10. Security Considerations
+## 10. Security & Privacy Considerations
+
+### Children's Privacy (COPPA / GDPR-K)
+
+The primary player is 9 years old. The app collects minimal personal data:
+- **Collected:** Display name (not real name required), avatar selection, game answers, scores.
+- **NOT collected:** Email (unless optional upgrade), real age, location, photos.
+- **No tracking:** No analytics SDKs, no advertising, no third-party cookies.
+- **AI data:** Player answers are sent to Claude/OpenAI for validation. These are Hebrew words (not personal information). Both providers' API terms prohibit training on API data.
+- **Parental consent:** Not required for v1 since anonymous auth collects no PII. If email linking is added, a parental consent flow will be required for users under 13/16.
 
 ### AI Prompt Injection Prevention
 
@@ -1016,8 +1218,9 @@ function sanitizeAnswer(text: string): string {
 
 - **API routes:** Token bucket per IP (30 requests/minute for AI endpoints, 100 requests/minute for game actions)
 - **Room creation:** Max 5 rooms per IP per hour
+- **Room joining:** Max 5 attempts per IP per minute (see Multiplayer section — Join Rate Limiting)
 - **Hint usage:** Enforced server-side; even if client is tampered with, the API rejects excess hint requests
-- **Implementation:** `next-rate-limit` or custom middleware with Supabase counter table
+- **Implementation:** Supabase `rate_limits` table with an atomic `increment_or_reset()` function (NOT in-memory — serverless functions on Vercel do not retain state between invocations)
 
 ### Room Access Control
 
@@ -1025,7 +1228,7 @@ function sanitizeAnswer(text: string): string {
 - No authentication required to join (family game, low barrier) but:
   - Room creator can kick players from lobby
   - Once game starts, no new players can join
-  - Room code is not guessable in practice (4-digit = 10K possibilities, rooms are short-lived)
+  - Room code enumeration mitigated by join rate limiting (5 attempts/min/IP) — at that rate, brute-forcing 10K codes would take >33 hours
 - For extra safety: optional room password (not in v1)
 
 ### API Key Management
@@ -1042,11 +1245,11 @@ function sanitizeAnswer(text: string): string {
 
 **Per player per round: 1 validation call** (all categories batched into a single prompt). For a 4-player game, that is 4 parallel calls at round end.
 
-**Solo mode:** Competitor generation is 1 call per round (all competitors in a single prompt). Validation is 1 call for the player + 1 call for all competitors.
+**Solo mode:** Competitor generation is 1 call per round (all competitors in a single prompt). Validation is 1 call for the human player + 1 call for all AI competitors (batched together since they share the same round context).
 
 **Total AI calls per round:**
-- Solo: 3 (competitor gen + player validation + competitor validation)
-- Multiplayer (4 players): 4 (validation only, no generation)
+- Solo: 3 (1 competitor gen + 1 player validation + 1 competitor validation)
+- Multiplayer (N players): N (1 validation call per player, all in parallel)
 
 ### Optimistic UI Updates
 
@@ -1068,6 +1271,15 @@ function sanitizeAnswer(text: string): string {
 - **Image optimization:** Next.js `<Image>` for avatars and share previews
 - **Supabase connection pooling:** Use Supabase's built-in connection pooler for API routes
 - **Edge runtime:** AI proxy routes can run on Vercel Edge for lower latency
+
+### Supabase Outage Degradation
+
+Supabase is a single point of failure for multiplayer. If Supabase is unreachable:
+- **Multiplayer:** Unavailable. The "Create Game" and "Join Game" buttons show "שירות זמנית לא זמין" (service temporarily unavailable). The app detects this via a health check on load (`supabase.from('players').select('id').limit(1)`).
+- **Solo mode:** Fully functional — uses LocalStorage only. No Supabase dependency.
+- **Profile:** Falls back to LocalStorage cached profile. Changes queued and synced on reconnection.
+
+This is acceptable for a family game — solo mode (the primary use case for a 9-year-old) works offline.
 
 
 ## 12. Future Considerations
