@@ -138,7 +138,9 @@
         .player-chip:nth-child(1) .player-avatar { background: var(--accent); }
         .player-chip:nth-child(2) .player-avatar { background: var(--teal); }
         .player-chip:nth-child(3) .player-avatar { background: var(--gold); }
-        .player-chip:nth-child(4) .player-avatar { background: #a78bfa; }
+        .player-chip:nth-child(4) .player-avatar { background: #f472b6; }
+        .player-chip:nth-child(5) .player-avatar { background: #a78bfa; }
+        .player-chip:nth-child(6) .player-avatar { background: #3b82f6; }
 
         .player-score {
             font-weight: 700;
@@ -174,7 +176,9 @@
 
         .player-chip:nth-child(2) .dot.filled { background: var(--teal); box-shadow: 0 0 6px var(--teal-glow); }
         .player-chip:nth-child(3) .dot.filled { background: var(--gold); box-shadow: 0 0 6px var(--gold-glow); }
-        .player-chip:nth-child(4) .dot.filled { background: #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.3); }
+        .player-chip:nth-child(4) .dot.filled { background: #f472b6; box-shadow: 0 0 6px rgba(244, 114, 182, 0.3); }
+        .player-chip:nth-child(5) .dot.filled { background: #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.3); }
+        .player-chip:nth-child(6) .dot.filled { background: #3b82f6; box-shadow: 0 0 6px rgba(59, 130, 246, 0.3); }
 
         .round-info {
             display: flex;
@@ -645,38 +649,58 @@
                 <div class="player-chip active">
                     <div class="player-avatar">ל</div>
                     <span>להב</span>
-                    <span class="player-age">(גיל 9)</span>
+                    <span class="player-age">(9)</span>
                     <span class="player-score" id="score-lahav">45</span>
                 </div>
-                <div class="player-chip" data-competitor="noam">
-                    <div class="player-avatar">נ</div>
-                    <span>נועם</span>
-                    <span class="player-age">(גיל 9)</span>
-                    <div class="player-progress" id="progress-noam">
+                <div class="player-chip" data-competitor="jonathan">
+                    <div class="player-avatar">ג׳</div>
+                    <span>ג׳ונתן</span>
+                    <span class="player-age">(12)</span>
+                    <div class="player-progress" id="progress-jonathan">
                         <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
                         <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
                     </div>
-                    <span class="player-score" id="score-noam">25</span>
+                    <span class="player-score" id="score-jonathan">35</span>
+                </div>
+                <div class="player-chip" data-competitor="emily">
+                    <div class="player-avatar">א</div>
+                    <span>אמילי</span>
+                    <span class="player-age">(14)</span>
+                    <div class="player-progress" id="progress-emily">
+                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                    </div>
+                    <span class="player-score" id="score-emily">40</span>
+                </div>
+                <div class="player-chip" data-competitor="lily">
+                    <div class="player-avatar">ל</div>
+                    <span>לילי</span>
+                    <span class="player-age">(6)</span>
+                    <div class="player-progress" id="progress-lily">
+                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                    </div>
+                    <span class="player-score" id="score-lily">15</span>
+                </div>
+                <div class="player-chip" data-competitor="avital">
+                    <div class="player-avatar">א</div>
+                    <span>אביטל</span>
+                    <span class="player-age">(30)</span>
+                    <div class="player-progress" id="progress-avital">
+                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                    </div>
+                    <span class="player-score" id="score-avital">50</span>
                 </div>
                 <div class="player-chip" data-competitor="aryeh">
                     <div class="player-avatar">א</div>
                     <span>אריה</span>
-                    <span class="player-age">(גיל 46)</span>
+                    <span class="player-age">(46)</span>
                     <div class="player-progress" id="progress-aryeh">
                         <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
                         <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
                     </div>
-                    <span class="player-score" id="score-aryeh">30</span>
-                </div>
-                <div class="player-chip" data-competitor="moran">
-                    <div class="player-avatar">מ</div>
-                    <span>מורן</span>
-                    <span class="player-age">(גיל 35)</span>
-                    <div class="player-progress" id="progress-moran">
-                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
-                        <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
-                    </div>
-                    <span class="player-score" id="score-moran">0</span>
+                    <span class="player-score" id="score-aryeh">55</span>
                 </div>
             </div>
             <div class="round-info">
@@ -719,26 +743,30 @@
                     <tr>
                         <th>קטגוריה</th>
                         <th>להב</th>
-                        <th>נועם</th>
+                        <th>ג׳ונתן</th>
+                        <th>אמילי</th>
+                        <th>לילי</th>
+                        <th>אביטל</th>
                         <th>אריה</th>
-                        <th>מורן</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>🌍 ארץ</td><td class="answer-unique">מרוקו (10)</td><td class="answer-shared">מצרים (5)</td><td class="answer-shared">מצרים (5)</td><td class="answer-unique">מלזיה (10)</td></tr>
-                    <tr><td>🏙️ עיר</td><td class="answer-unique">מילאנו (10)</td><td class="answer-empty">— (0)</td><td class="answer-unique">מנצ׳סטר (10)</td><td class="answer-unique">מדריד (10)</td></tr>
-                    <tr><td>🐾 חי</td><td class="answer-empty">— (0)</td><td class="answer-shared">מנגוסטה (5)</td><td class="answer-shared">מנגוסטה (5)</td><td class="answer-unique">מדוזה (10)</td></tr>
-                    <tr><td>🌿 צומח</td><td class="answer-shared">מנגו (5)</td><td class="answer-unique">מרווה (10)</td><td class="answer-shared">מנגו (5)</td><td class="answer-shared">מנגו (5)</td></tr>
-                    <tr><td>👦 ילד</td><td class="answer-unique">מיכאל (10)</td><td class="answer-unique">מאור (10)</td><td class="answer-unique">מתן (10)</td><td class="answer-unique">מעיין (10)</td></tr>
-                    <tr><td>👧 ילדה</td><td class="answer-empty">— (0)</td><td class="answer-unique">מורן (10)</td><td class="answer-unique">מיכל (10)</td><td class="answer-unique">מיה (10)</td></tr>
-                    <tr><td>💼 מקצוע</td><td class="answer-shared">מהנדס (5)</td><td class="answer-unique">מתכנת (10)</td><td class="answer-shared">מהנדס (5)</td><td class="answer-unique">מורה (10)</td></tr>
-                    <tr><td>🎵 זמר/ת</td><td class="answer-empty">— (0)</td><td class="answer-empty">— (0)</td><td class="answer-unique">משה פרץ (10)</td><td class="answer-unique">מירי מסיקה (10)</td></tr>
+                    <tr><td>🌍 ארץ</td><td class="answer-unique">מרוקו (10)</td><td class="answer-shared">מצרים (5)</td><td class="answer-unique">מלזיה (10)</td><td class="answer-empty">— (0)</td><td class="answer-shared">מצרים (5)</td><td class="answer-unique">מונגוליה (10)</td></tr>
+                    <tr><td>🏙️ עיר</td><td class="answer-unique">מילאנו (10)</td><td class="answer-unique">מנצ׳סטר (10)</td><td class="answer-unique">מדריד (10)</td><td class="answer-unique">מודיעין (10)</td><td class="answer-unique">מלבורן (10)</td><td class="answer-unique">מינכן (10)</td></tr>
+                    <tr><td>🐾 חי</td><td class="answer-empty">— (0)</td><td class="answer-shared">מנגוסטה (5)</td><td class="answer-unique">מדוזה (10)</td><td class="answer-unique">מלכודנית (10)</td><td class="answer-shared">מנגוסטה (5)</td><td class="answer-unique">מנטה (10)</td></tr>
+                    <tr><td>🌿 צומח</td><td class="answer-shared">מנגו (5)</td><td class="answer-shared">מנגו (5)</td><td class="answer-unique">מרווה (10)</td><td class="answer-empty">— (0)</td><td class="answer-shared">מנגו (5)</td><td class="answer-unique">מנדרינה (10)</td></tr>
+                    <tr><td>👦 ילד</td><td class="answer-unique">מיכאל (10)</td><td class="answer-unique">מאור (10)</td><td class="answer-unique">מתן (10)</td><td class="answer-unique">משה (10)</td><td class="answer-unique">מעיין (10)</td><td class="answer-unique">מרדכי (10)</td></tr>
+                    <tr><td>👧 ילדה</td><td class="answer-empty">— (0)</td><td class="answer-unique">מורן (10)</td><td class="answer-unique">מיכל (10)</td><td class="answer-unique">מיה (10)</td><td class="answer-unique">מירב (10)</td><td class="answer-unique">מרים (10)</td></tr>
+                    <tr><td>💼 מקצוע</td><td class="answer-shared">מהנדס (5)</td><td class="answer-shared">מהנדס (5)</td><td class="answer-unique">מתכנתת (10)</td><td class="answer-empty">— (0)</td><td class="answer-unique">מורה (10)</td><td class="answer-shared">מהנדס (5)</td></tr>
+                    <tr><td>🎵 זמר/ת</td><td class="answer-empty">— (0)</td><td class="answer-unique">מאיר אריאל (10)</td><td class="answer-unique">מירי מסיקה (10)</td><td class="answer-empty">— (0)</td><td class="answer-unique">מוש בן ארי (10)</td><td class="answer-unique">משה פרץ (10)</td></tr>
                     <tr class="score-total-row">
                         <td>סה״כ סיבוב</td>
                         <td style="color: var(--accent)">40</td>
-                        <td style="color: var(--teal)">50</td>
-                        <td style="color: var(--gold)">60</td>
-                        <td style="color: #a78bfa">75</td>
+                        <td style="color: var(--teal)">60</td>
+                        <td style="color: var(--gold)">80</td>
+                        <td style="color: #a78bfa">40</td>
+                        <td style="color: var(--teal)">65</td>
+                        <td style="color: var(--gold)">75</td>
                     </tr>
                 </tbody>
             </table>
@@ -795,25 +823,39 @@
         // Competitor simulation config — speed based on age
         // Adults (age 30-50): fast & complete. Kids (age 6-12): slower, skip some categories.
         const competitors = {
-            noam: {
-                age: 9,
-                fillProbability: 0.55,  // 55% — kids skip harder ones
-                minDelay: 30,           // slower to start
-                maxDelay: 200,          // up to ~3:20
+            jonathan: {
+                age: 12,
+                fillProbability: 0.7,   // 70% — older kid, decent
+                minDelay: 20,
+                maxDelay: 140,
+                filledDots: 0,
+            },
+            emily: {
+                age: 14,
+                fillProbability: 0.8,   // 80% — teen, strong
+                minDelay: 15,
+                maxDelay: 110,
+                filledDots: 0,
+            },
+            lily: {
+                age: 6,
+                fillProbability: 0.4,   // 40% — youngest, skips a lot
+                minDelay: 45,
+                maxDelay: 250,
+                filledDots: 0,
+            },
+            avital: {
+                age: 30,
+                fillProbability: 0.85,  // 85% — adult
+                minDelay: 18,
+                maxDelay: 95,
                 filledDots: 0,
             },
             aryeh: {
                 age: 46,
                 fillProbability: 0.9,   // 90% — experienced adult
-                minDelay: 15,           // fastest fill at 15s
-                maxDelay: 80,           // slowest fill at ~1:20
-                filledDots: 0,
-            },
-            moran: {
-                age: 35,
-                fillProbability: 0.85,  // 85% — adult
-                minDelay: 20,           // slightly slower than Aryeh
-                maxDelay: 100,          // up to ~1:40
+                minDelay: 15,
+                maxDelay: 80,
                 filledDots: 0,
             },
         };

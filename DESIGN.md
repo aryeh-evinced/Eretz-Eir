@@ -146,45 +146,32 @@ CREATE TABLE player_stats (
   weakest_category TEXT
 );
 
--- player_stats is updated by a Postgres trigger that fires after each game_session
--- transitions to 'finished'. The trigger recalculates from the answers table
--- (single source of truth) rather than incrementing counters.
-CREATE OR REPLACE FUNCTION update_player_stats() RETURNS TRIGGER AS $$
+-- player_stats is updated via an async refresh pipeline (see ADR 0001).
+-- When a game finishes, the game finalization endpoint inserts affected
+-- player_id values into stats_refresh_queue. A scheduled Edge Function
+-- drains the queue, recomputes player_stats, and refreshes the
+-- materialized view outside the write transaction.
+
+CREATE TABLE stats_refresh_queue (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  player_id UUID NOT NULL REFERENCES players(id),
+  enqueued_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- The trigger enqueues affected players instead of computing inline.
+CREATE OR REPLACE FUNCTION enqueue_stats_refresh() RETURNS TRIGGER AS $$
 BEGIN
-  -- Recalculate stats for all participants in the finished game
-  INSERT INTO player_stats (player_id, games_played, games_won, total_score, avg_score_per_round, unique_answers_count)
-  SELECT
-    gp.player_id,
-    COUNT(DISTINCT gs.id),
-    COUNT(DISTINCT gs.id) FILTER (WHERE gp.rank = 1),
-    COALESCE(SUM(a.score), 0),
-    ROUND(COALESCE(AVG(a.score), 0), 1),
-    COUNT(*) FILTER (WHERE a.is_unique)
-  FROM game_players gp
-  JOIN game_sessions gs ON gs.id = gp.game_id AND gs.status = 'finished'
-  LEFT JOIN rounds r ON r.game_id = gs.id
-  LEFT JOIN answers a ON a.round_id = r.id AND a.player_id = gp.player_id
-  WHERE gp.player_id IN (SELECT player_id FROM game_players WHERE game_id = NEW.id)
-    AND NOT gp.is_ai
-  GROUP BY gp.player_id
-  ON CONFLICT (player_id) DO UPDATE SET
-    games_played = EXCLUDED.games_played,
-    games_won = EXCLUDED.games_won,
-    total_score = EXCLUDED.total_score,
-    avg_score_per_round = EXCLUDED.avg_score_per_round,
-    unique_answers_count = EXCLUDED.unique_answers_count;
-
-  -- Also refresh the materialized view
-  REFRESH MATERIALIZED VIEW CONCURRENTLY player_category_stats;
-
+  INSERT INTO stats_refresh_queue (player_id)
+  SELECT player_id FROM game_players
+  WHERE game_id = NEW.id AND NOT is_ai;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_update_stats
+CREATE TRIGGER trg_enqueue_stats
   AFTER UPDATE OF status ON game_sessions
   FOR EACH ROW WHEN (NEW.status = 'finished')
-  EXECUTE FUNCTION update_player_stats();
+  EXECUTE FUNCTION enqueue_stats_refresh();
 ```
 
 ### Game Session
@@ -374,7 +361,7 @@ CREATE UNIQUE INDEX idx_player_category_stats
   ON player_category_stats(player_id, category);
 ```
 
-**Refresh strategy:** The materialized view is refreshed concurrently (non-blocking) by the same `update_player_stats` trigger that fires when a game finishes. `REFRESH MATERIALIZED VIEW CONCURRENTLY` requires the unique index above. For the profile page, this staleness (up to one game behind) is acceptable. The leaderboard page queries the view directly.
+**Refresh strategy:** The materialized view is refreshed by an async pipeline (see ADR 0001). When a game finishes, the `enqueue_stats_refresh` trigger inserts affected player IDs into `stats_refresh_queue`. A scheduled Edge Function (`stats-refresh`, every 60s) drains the queue, recomputes `player_stats`, and runs `REFRESH MATERIALIZED VIEW CONCURRENTLY player_category_stats`. The unique index above is required for concurrent refresh. For the profile page, staleness of up to 60 seconds is acceptable. The leaderboard page queries the view directly.
 
 
 ## 4. AI Integration Design
@@ -694,7 +681,7 @@ GAME_OVER (final results)
 
 ### Handling Disconnections and Reconnections
 
-- **Heartbeat:** Client writes `last_seen` to `game_players` table every 15 seconds via a direct Supabase `UPDATE` (not via the Realtime channel — heartbeat must work independently of the channel it monitors).
+- **Heartbeat:** Client calls a Supabase RPC `heartbeat(game_id uuid)` every 15 seconds (see ADR 0001). The RPC updates only `game_players.last_seen` for `auth.uid()`, preventing clients from modifying other fields. Falls back to `POST /api/game/heartbeat` if the RPC is unreachable.
 - **Disconnect detection:** A Supabase Edge Function runs on a 30-second cron. If a player's `last_seen` is older than 45 seconds, they are marked `disconnected` (visible to others but NOT removed from game).
 - **Reconnection:** Player reopens the app/tab. Client reads current game state from Supabase and resubscribes to the channel. Seamless -- no data loss since all state is server-side.
 - **Abandoned player:** If disconnected for >5 minutes during a round, their unanswered categories score 0 for that round. They can still rejoin for subsequent rounds.
@@ -1181,9 +1168,9 @@ CREATE POLICY "Game data readable by participants"
 CREATE POLICY "Players can create games"
   ON game_sessions FOR INSERT WITH CHECK (created_by = auth.uid());
 
--- Answers writable by the answer's player during an active round
-CREATE POLICY "Players can insert own answers"
-  ON answers FOR INSERT WITH CHECK (player_id = auth.uid());
+-- Answers are written exclusively by route handlers using the service role key.
+-- No client-facing INSERT/UPDATE policy on answers (see ADR 0001).
+-- This ensures the server remains the sole scoring authority.
 
 -- Answers readable by game participants (after round ends)
 CREATE POLICY "Answers readable after round"
@@ -1201,11 +1188,8 @@ CREATE POLICY "Answers readable after round"
 -- Game state updates (game_sessions, rounds, answers scoring fields) are restricted
 -- to the service role. API route handlers use the Supabase service key to mutate
 -- game state — clients never UPDATE these tables directly via the anon key.
--- The only client-writable field is game_players.last_seen (heartbeat).
-CREATE POLICY "Players can update own heartbeat"
-  ON game_players FOR UPDATE
-  USING (player_id = auth.uid())
-  WITH CHECK (player_id = auth.uid());
+-- Heartbeat updates use the heartbeat(game_id) RPC instead of direct table writes
+-- (see ADR 0001) to prevent clients from modifying total_score, rank, etc.
 ```
 
 ### Data Retention

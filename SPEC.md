@@ -18,9 +18,11 @@ A digital version of the classic Israeli word game "ארץ עיר" (Country City
 
 ## Players
 - **Lahav** (age 9) — primary player
-- **Noam** (age 9) — sibling
+- **Jonathan** (age 12) — sibling
+- **Lily** (age 6) — sibling
+- **Emily** (age 14) — sibling
+- **Avital** (age 30) — mother
 - **Aryeh** (age 46) — father
-- **Moran** (age 35) — mother
 
 ## Core Gameplay
 
