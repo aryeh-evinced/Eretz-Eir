@@ -169,8 +169,12 @@ export default function ResultsPage() {
 
   function handleEndGame() {
     endGame();
-    clearGame();
-    router.push("/");
+    if (session) {
+      router.push(`/gameover/${session.id}`);
+    } else {
+      clearGame();
+      router.push("/");
+    }
   }
 
   if (!session || !currentRound) {
@@ -206,7 +210,7 @@ export default function ResultsPage() {
         aria-label="דירוג שחקנים"
       >
         {results.map((player, idx) => {
-          const rankColors = [
+          const _rankColors = [
             "text-gold border-gold/40 bg-gold/10",
             "text-text-dim border-border bg-surface-2",
             "text-text-dim border-border bg-surface-2",
