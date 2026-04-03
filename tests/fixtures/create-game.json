@@ -1,0 +1,10 @@
+{
+  "_comment": "Sample game creation payload — UTF-8 Hebrew categories and letter",
+  "mode": "solo",
+  "categoryMode": "fixed",
+  "categories": ["ארץ", "עיר", "חי", "צומח", "ילד", "ילדה", "מקצוע", "זמר/ת"],
+  "timerSeconds": 90,
+  "helpsPerRound": 2,
+  "letter": "מ",
+  "createdBy": "00000000-0000-0000-0000-000000000001"
+}
