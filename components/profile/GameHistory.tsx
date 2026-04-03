@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { loadGameHistory } from "@/lib/storage/localGame";
 import type { GameHistoryEntry } from "@/lib/storage/localGame";
 
+/**
+ * Local-only solo game history.
+ * Data lives in localStorage only — not synced to the cloud.
+ */
 export function GameHistory() {
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
 
@@ -15,14 +20,21 @@ export function GameHistory() {
   if (history.length === 0) {
     return (
       <p className="text-text-dim text-center text-sm py-6">
-        עדיין לא שיחקת. לך תשחק! 🎮
+        עדיין לא שיחקת סולו. לך תשחק! 🎮
       </p>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2" role="list" aria-label="היסטוריית משחקים">
-      {history.slice(0, 10).map((game) => (
+    <div className="flex flex-col gap-3">
+      {/* Source label */}
+      <div className="flex items-center gap-2">
+        <Badge variant="default" size="sm">מקומי</Badge>
+        <span className="text-text-dim text-xs">סולו בלבד — שמור במכשיר זה</span>
+      </div>
+
+      <div className="flex flex-col gap-2" role="list" aria-label="היסטוריית משחקים מקומית">
+        {history.slice(0, 10).map((game) => (
         <Card
           key={game.id}
           role="listitem"
@@ -43,6 +55,7 @@ export function GameHistory() {
           </span>
         </Card>
       ))}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ const variantClasses = {
   success: "bg-teal/10 text-teal border-teal/30",
   warning: "bg-gold/10 text-gold border-gold/30",
   accent: "bg-accent/10 text-accent border-accent/30",
+  info: "bg-blue-500/10 text-blue-400 border-blue-500/30",
 } as const;
 
 const sizeClasses = {
