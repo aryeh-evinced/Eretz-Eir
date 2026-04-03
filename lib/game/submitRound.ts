@@ -5,6 +5,7 @@ import { validateAnswersWithWordList } from "@/lib/game/fallbackWords";
 import { computeUniqueness } from "@/lib/game/uniqueness";
 import { scoreAnswer } from "@/lib/game/scoring";
 import { transitionRound } from "@/lib/game/stateMachine";
+import { shouldEnterManualReview } from "@/lib/game/manualReview";
 import { logger } from "@/lib/observability/logger";
 
 export interface ScoredRoundResult {
@@ -60,14 +61,22 @@ export async function submitRound(
     throw new Error(`submitRound: round ${roundId} does not belong to game ${gameId}`);
   }
 
-  // Validate the state transition eagerly — throws if the round is not in "playing".
-  const nextStatus = transitionRound(round.status as RoundStatus, "start_review");
+  // Validate that start_review is a legal transition — throws if not in "playing".
+  // Actual nextStatus is deferred until after AI validation to decide reviewing vs manual_review.
+  transitionRound(round.status as RoundStatus, "start_review");
   logger.info("submitRound: round fetched, transition validated", {
     roundId,
     currentStatus: round.status,
-    nextStatus,
     letter: round.letter,
   });
+
+  // Determine game mode for manual review decisions
+  const { data: gameSession } = await supabaseAdmin
+    .from("game_sessions")
+    .select("mode")
+    .eq("id", gameId)
+    .single();
+  const isSoloMode = gameSession?.mode === "solo";
 
   // ── 2. Fetch answers ───────────────────────────────────────────────────────
   const { data: rawAnswers, error: answersError } = await supabaseAdmin
@@ -113,6 +122,7 @@ export async function submitRound(
 
   // Map: answerId -> { valid }
   const validationMap = new Map<string, boolean>();
+  let aiValidationFailed = false;
 
   for (const [playerId, playerAnswers] of answersByPlayer.entries()) {
     // Build answer list — skip null/empty answers
@@ -150,11 +160,13 @@ export async function submitRound(
           playerId,
           error: err instanceof Error ? err.message : String(err),
         });
+        aiValidationFailed = true;
       }
     }
 
     // Fallback to word-list if AI validation failed
     if (!aiValidation) {
+      aiValidationFailed = true;
       const answerRecord: Record<string, string> = {};
       for (const a of playerAnswers) {
         if (a.answerText !== null && a.answerText.trim() !== "") {
@@ -252,17 +264,29 @@ export async function submitRound(
 
     logger.info("submitRound: answers written to DB", { roundId, count: answers.length });
 
-    // Update round status to "reviewing"
+    // Determine review status based on AI validation outcome
+    const reviewDecision = shouldEnterManualReview(aiValidationFailed, isSoloMode);
+    const nextStatus = reviewDecision.status;
+
+    // Update round status
     const { error: roundUpdateError } = await supabaseAdmin
       .from("rounds")
-      .update({ status: nextStatus })
+      .update({
+        status: nextStatus,
+        ended_at: new Date().toISOString(),
+      })
       .eq("id", roundId);
 
     if (roundUpdateError) {
       throw new Error(`submitRound: failed to update round status: ${roundUpdateError.message}`);
     }
 
-    logger.info("submitRound: round status updated", { roundId, nextStatus });
+    logger.info("submitRound: round status updated", {
+      roundId,
+      nextStatus,
+      aiValidationFailed,
+      reviewReason: reviewDecision.reason,
+    });
   } catch (err) {
     logger.error("submitRound: DB write failed (partial updates may have occurred)", {
       roundId,
