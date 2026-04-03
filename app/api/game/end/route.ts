@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { transitionGame } from '@/lib/game/stateMachine';
+import { finalizeGame } from '@/lib/game/finalScore';
 import { logger } from '@/lib/observability/logger';
 import type { GameStatus } from '@/lib/types/game';
 
@@ -41,28 +42,20 @@ export async function POST(request: NextRequest) {
     return Response.json({ ok: false, error: { code: 'INVALID_STATE', message: 'Game cannot be ended in current state' } }, { status: 409 });
   }
 
-  // Update game and room status
-  await supabase.from('game_sessions').update({ status: 'finished' }).eq('id', parsed.game_id);
+  // Close the room if multiplayer
   if (game.room_id) {
     await supabase.from('rooms').update({ status: 'finished' }).eq('id', game.room_id);
   }
 
-  // Enqueue players for stats refresh
-  const { data: players } = await supabase
-    .from('game_players')
-    .select('player_id, score_total')
-    .eq('game_id', parsed.game_id);
+  // Finalize game: compute ranks, persist to game_players, set finished_at, enqueue stats
+  const { rankings } = await finalizeGame(parsed.game_id, supabase);
 
-  if (players) {
-    const queueRows = players.map(p => ({ player_id: p.player_id }));
-    await supabase.from('stats_refresh_queue').insert(queueRows);
-  }
-
-  const finalScores = (players ?? []).map(p => ({
-    playerId: p.player_id,
-    score: p.score_total ?? 0,
+  const finalScores = rankings.map(r => ({
+    playerId: r.playerId,
+    score: r.totalScore,
+    rank: r.rank,
   }));
 
-  logger.info('Game ended', { gameId: parsed.game_id });
+  logger.info('Game ended', { gameId: parsed.game_id, rankedPlayers: rankings.length });
   return Response.json({ ok: true, data: { finalScores } });
 }

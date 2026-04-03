@@ -1,8 +1,8 @@
 /**
  * Ranking and scoring utilities.
  *
- * Phase 4 (implemented): in-round scoring aggregation and ranking.
- * Phase 6 (TODO): game_players.rank persistence, post-game aggregation.
+ * Phase 4: in-round scoring aggregation and ranking.
+ * Phase 6: game_players.rank persistence, post-game aggregation via finalScore.ts.
  */
 
 export interface RankedPlayer {
@@ -48,8 +48,7 @@ export function computeRoundRanking(playerScores: Map<string, number>): RankedPl
  * Players missing from a round's map are treated as scoring 0 for that round.
  *
  * Phase 4 final: multi-round aggregation and ranking.
- * TODO (Phase 6): persist final rank to game_players.rank in Supabase.
- * TODO (Phase 6): incorporate post-game bonus/penalty aggregation rules.
+ * Rank persistence and stats enqueue handled by finalScore.ts (Phase 6).
  */
 export function computeGameRanking(allRoundScores: Map<string, number>[]): RankedPlayer[] {
   if (allRoundScores.length === 0) return [];
