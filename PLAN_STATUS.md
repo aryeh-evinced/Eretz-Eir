@@ -1,6 +1,6 @@
 # Implementation Plan Status
 
-## Current Phase: 6 — Statistics, History, Game Over, And Sharing
+## Current Phase: 7 — Operational Hardening, Security Review, And Release
 ## Status: PENDING
 
 ### Phase 1 ✅
@@ -45,10 +45,19 @@
 | 3. Manual review + failure degradation | Done | `manualReview.ts`, results components, runbooks, solo degradation |
 | 4. Cost + concurrency controls | Done | `budget.ts`, `observability/ai.ts`, migration 0007, per-IP/game/concurrent/help limits |
 
-## Verification (Phase 5)
+### Phase 6 ✅
+| Task | Status | Notes |
+|---|---|---|
+| 1. Post-game aggregation + rank assignment | Done | `finalScore.ts`, `rebuildPlayerStats.ts`, migration 0008, backfill |
+| 2. Async stats refresh pipeline | Done | Migration 0009, materialized view, advisory lock, upgraded Edge Function |
+| 3. Game-over page + leaderboard | Done | `app/gameover/[id]`, Leaderboard, StatHighlight, ShareButton components |
+| 4. Cloud-backed game history | Done | `CloudGameHistory.tsx`, local/cloud source labels, "info" badge variant |
+| 5. Share image generation | Done | Satori + resvg-wasm, `renderResultImage.ts`, `GET /api/share`, dynamic imports |
+
+## Verification (Phase 6)
 - `pnpm typecheck` — passed (0 errors)
-- `pnpm lint` — passed (1 pre-existing warning)
-- `pnpm test` — passed (89 tests, 9 suites + 3 skipped eval gate)
+- `pnpm lint` — passed (0 warnings)
+- `pnpm test` — passed (96 tests, 11 suites + 3 skipped eval gate)
 
 ## Last Commit SHA
-fb57bbe
+4ccc9c4
