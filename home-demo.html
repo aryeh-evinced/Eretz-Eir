@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ארץ עיר — מסך פתיחה</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&family=Rubik:wght@400;500;700;800;900&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0f0f1a;
+            --surface: #1a1a2e;
+            --surface-2: #222240;
+            --surface-3: #2a2a50;
+            --accent: #e94560;
+            --accent-glow: rgba(233, 69, 96, 0.3);
+            --gold: #f5c842;
+            --gold-glow: rgba(245, 200, 66, 0.25);
+            --teal: #0ff0b3;
+            --teal-glow: rgba(15, 240, 179, 0.2);
+            --purple: #a78bfa;
+            --text: #eaeaea;
+            --text-dim: #8888a8;
+            --border: #2a2a4a;
+            --radius: 14px;
+        }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Floating letters background */
+        .bg-letters {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .bg-letter {
+            position: absolute;
+            font-family: 'Rubik', sans-serif;
+            font-weight: 900;
+            color: rgba(255, 255, 255, 0.02);
+            font-size: 8rem;
+            animation: floatUp linear infinite;
+            user-select: none;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(110vh) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-20vh) rotate(25deg); opacity: 0; }
+        }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 24px 20px 40px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Hero section */
+        .hero {
+            text-align: center;
+            padding: 48px 0 36px;
+        }
+
+        .logo-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 16px;
+            border-radius: 24px;
+            background: linear-gradient(135deg, var(--accent), #c23152);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Rubik', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 900;
+            color: #fff;
+            box-shadow: 0 8px 32px var(--accent-glow);
+            animation: logoPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes logoPulse {
+            0%, 100% { box-shadow: 0 8px 32px var(--accent-glow); }
+            50% { box-shadow: 0 8px 48px var(--accent-glow), 0 0 80px rgba(233, 69, 96, 0.15); }
+        }
+
+        .logo {
+            font-family: 'Rubik', sans-serif;
+            font-size: 2.8rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent), var(--gold), var(--teal));
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradientShift 4s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .logo-sub {
+            font-size: 0.95rem;
+            color: var(--text-dim);
+            margin-top: 4px;
+            font-weight: 300;
+        }
+
+        /* Profile card */
+        .profile-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .profile-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--gold));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            flex-shrink: 0;
+        }
+
+        .profile-info {
+            flex: 1;
+        }
+
+        .profile-name {
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        .profile-level {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .level-badge {
+            background: rgba(245, 200, 66, 0.15);
+            color: var(--gold);
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+
+        .profile-xp {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .profile-edit {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+
+        .profile-edit:hover {
+            border-color: var(--text-dim);
+            color: var(--text);
+        }
+
+        /* Stats strip */
+        .stats-strip {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+
+        .stat-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-family: 'Rubik', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+        }
+
+        .stat-value.wins { color: var(--gold); }
+        .stat-value.games { color: var(--teal); }
+        .stat-value.streak { color: var(--accent); }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* Main actions */
+        .main-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+
+        .btn-main {
+            font-family: 'Heebo', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            padding: 18px 24px;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-main:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-new-game {
+            background: linear-gradient(135deg, var(--accent), #c23152);
+            color: #fff;
+            box-shadow: 0 6px 24px var(--accent-glow);
+        }
+
+        .btn-new-game:hover {
+            box-shadow: 0 8px 36px var(--accent-glow);
+        }
+
+        .btn-new-game .btn-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+        }
+
+        .btn-new-game .btn-desc {
+            font-size: 0.8rem;
+            font-weight: 400;
+            opacity: 0.8;
+        }
+
+        .btn-join {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-join:hover {
+            border-color: var(--teal);
+            box-shadow: 0 4px 20px var(--teal-glow);
+        }
+
+        .btn-join .btn-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(15, 240, 179, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+        }
+
+        .btn-join .btn-desc {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: var(--text-dim);
+        }
+
+        .btn-text {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .btn-arrow {
+            margin-right: auto;
+            font-size: 1.2rem;
+            opacity: 0.5;
+        }
+
+        /* Recent games */
+        .section-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+
+        .recent-games {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 28px;
+        }
+
+        .recent-game {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .recent-game:hover {
+            border-color: var(--border);
+            background: var(--surface-2);
+        }
+
+        .recent-rank {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Rubik', sans-serif;
+            font-weight: 800;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .rank-1 { background: rgba(245, 200, 66, 0.15); color: var(--gold); }
+        .rank-2 { background: rgba(15, 240, 179, 0.1); color: var(--teal); }
+        .rank-3 { background: rgba(233, 69, 96, 0.1); color: var(--accent); }
+
+        .recent-info {
+            flex: 1;
+        }
+
+        .recent-top {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+        }
+
+        .recent-mode {
+            font-size: 0.65rem;
+            background: var(--surface-2);
+            color: var(--text-dim);
+            padding: 1px 8px;
+            border-radius: 10px;
+        }
+
+        .recent-bottom {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .recent-score {
+            font-family: 'Rubik', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--text-dim);
+        }
+
+        /* Achievements teaser */
+        .achievements {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 28px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .achievement {
+            flex-shrink: 0;
+            width: 72px;
+            text-align: center;
+        }
+
+        .achievement-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            margin: 0 auto 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            position: relative;
+        }
+
+        .achievement-icon.earned {
+            background: var(--surface);
+            border: 2px solid var(--gold);
+            box-shadow: 0 0 12px var(--gold-glow);
+        }
+
+        .achievement-icon.locked {
+            background: var(--surface-2);
+            border: 2px solid var(--border);
+            opacity: 0.4;
+            filter: grayscale(100%);
+        }
+
+        .achievement-label {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            line-height: 1.2;
+        }
+
+        /* Bottom nav */
+        .bottom-spacer { flex: 1; }
+
+        .bottom-nav {
+            display: flex;
+            justify-content: space-around;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 10px 0;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 4px 16px;
+            border-radius: 12px;
+            transition: all 0.3s;
+        }
+
+        .nav-item.active {
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .nav-icon {
+            font-size: 1.3rem;
+        }
+
+        .nav-label {
+            font-size: 0.65rem;
+            font-weight: 500;
+            color: var(--text-dim);
+        }
+
+        .nav-item.active .nav-label {
+            color: var(--accent);
+        }
+
+        /* Animations */
+        .fade-up {
+            animation: fadeUp 0.5s ease both;
+        }
+
+        .fade-up:nth-child(2) { animation-delay: 0.05s; }
+        .fade-up:nth-child(3) { animation-delay: 0.1s; }
+        .fade-up:nth-child(4) { animation-delay: 0.15s; }
+        .fade-up:nth-child(5) { animation-delay: 0.2s; }
+        .fade-up:nth-child(6) { animation-delay: 0.25s; }
+        .fade-up:nth-child(7) { animation-delay: 0.3s; }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 420px) {
+            .logo { font-size: 2.2rem; }
+            .stats-strip { gap: 6px; }
+            .stat-box { padding: 10px 8px; }
+            .stat-value { font-size: 1.3rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Floating background letters -->
+    <div class="bg-letters" id="bgLetters"></div>
+
+    <div class="app">
+        <!-- Hero -->
+        <div class="hero fade-up">
+            <div class="logo-icon">אע</div>
+            <div class="logo">ארץ עיר</div>
+            <div class="logo-sub">המשחק הקלאסי — גרסה דיגיטלית</div>
+        </div>
+
+        <!-- Profile -->
+        <div class="profile-card fade-up">
+            <div class="profile-avatar">🦁</div>
+            <div class="profile-info">
+                <div class="profile-name">להב</div>
+                <div class="profile-level">
+                    <span class="level-badge">רמה 7</span>
+                    <span class="profile-xp">1,240 / 2,000 XP</span>
+                </div>
+            </div>
+            <button class="profile-edit">✏️</button>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-strip fade-up">
+            <div class="stat-box">
+                <div class="stat-value wins">12</div>
+                <div class="stat-label">ניצחונות</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value games">28</div>
+                <div class="stat-label">משחקים</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value streak">5 🔥</div>
+                <div class="stat-label">רצף</div>
+            </div>
+        </div>
+
+        <!-- Main actions -->
+        <div class="main-actions fade-up">
+            <button class="btn-main btn-new-game">
+                <div class="btn-icon">🎮</div>
+                <div class="btn-text">
+                    <span>משחק חדש</span>
+                    <span class="btn-desc">סולו או מולטיפלייר</span>
+                </div>
+                <span class="btn-arrow">←</span>
+            </button>
+            <button class="btn-main btn-join">
+                <div class="btn-icon">🔗</div>
+                <div class="btn-text">
+                    <span>הצטרפות למשחק</span>
+                    <span class="btn-desc">הזינו קוד חדר או לינק</span>
+                </div>
+                <span class="btn-arrow">←</span>
+            </button>
+        </div>
+
+        <!-- Recent games -->
+        <div class="fade-up">
+            <div class="section-title">משחקים אחרונים</div>
+            <div class="recent-games">
+                <div class="recent-game">
+                    <div class="recent-rank rank-1">🥇</div>
+                    <div class="recent-info">
+                        <div class="recent-top">להב, אריה, מורן, נועם <span class="recent-mode">סולו</span></div>
+                        <div class="recent-bottom">היום, 14:30 — 6 סיבובים</div>
+                    </div>
+                    <div class="recent-score" style="color: var(--gold)">285</div>
+                </div>
+                <div class="recent-game">
+                    <div class="recent-rank rank-2">🥈</div>
+                    <div class="recent-info">
+                        <div class="recent-top">להב, נועם, אריה <span class="recent-mode">מולטיפלייר</span></div>
+                        <div class="recent-bottom">אתמול, 20:15 — 8 סיבובים</div>
+                    </div>
+                    <div class="recent-score" style="color: var(--teal)">210</div>
+                </div>
+                <div class="recent-game">
+                    <div class="recent-rank rank-3">🥉</div>
+                    <div class="recent-info">
+                        <div class="recent-top">להב, מורן <span class="recent-mode">סולו</span></div>
+                        <div class="recent-bottom">01.04, 16:00 — 4 סיבובים</div>
+                    </div>
+                    <div class="recent-score">175</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Achievements -->
+        <div class="fade-up">
+            <div class="section-title">הישגים</div>
+            <div class="achievements">
+                <div class="achievement">
+                    <div class="achievement-icon earned">⚡</div>
+                    <div class="achievement-label">הכי מהיר</div>
+                </div>
+                <div class="achievement">
+                    <div class="achievement-icon earned">🧠</div>
+                    <div class="achievement-label">5 ייחודיות ברצף</div>
+                </div>
+                <div class="achievement">
+                    <div class="achievement-icon earned">🏆</div>
+                    <div class="achievement-label">10 ניצחונות</div>
+                </div>
+                <div class="achievement">
+                    <div class="achievement-icon locked">🌍</div>
+                    <div class="achievement-label">מלך הארצות</div>
+                </div>
+                <div class="achievement">
+                    <div class="achievement-icon locked">🔥</div>
+                    <div class="achievement-label">רצף 10</div>
+                </div>
+                <div class="achievement">
+                    <div class="achievement-icon locked">👑</div>
+                    <div class="achievement-label">מושלם</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-spacer"></div>
+
+        <!-- Bottom nav -->
+        <div class="bottom-nav fade-up">
+            <div class="nav-item active">
+                <div class="nav-icon">🏠</div>
+                <div class="nav-label">ראשי</div>
+            </div>
+            <div class="nav-item">
+                <div class="nav-icon">📊</div>
+                <div class="nav-label">סטטיסטיקות</div>
+            </div>
+            <div class="nav-item">
+                <div class="nav-icon">🏅</div>
+                <div class="nav-label">הישגים</div>
+            </div>
+            <div class="nav-item">
+                <div class="nav-icon">⚙️</div>
+                <div class="nav-label">הגדרות</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Floating Hebrew letters background
+        const letters = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
+        const container = document.getElementById('bgLetters');
+
+        function spawnLetter() {
+            const el = document.createElement('div');
+            el.className = 'bg-letter';
+            el.textContent = letters[Math.floor(Math.random() * letters.length)];
+            el.style.left = Math.random() * 100 + '%';
+            el.style.fontSize = (4 + Math.random() * 8) + 'rem';
+            el.style.animationDuration = (12 + Math.random() * 20) + 's';
+            el.style.animationDelay = Math.random() * 2 + 's';
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 35000);
+        }
+
+        for (let i = 0; i < 6; i++) setTimeout(spawnLetter, i * 800);
+        setInterval(spawnLetter, 3000);
+    </script>
+</body>
+</html>
