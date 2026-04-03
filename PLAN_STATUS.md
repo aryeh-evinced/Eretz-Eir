@@ -1,6 +1,6 @@
 # Implementation Plan Status
 
-## Current Phase: 5 — AI Layer, Manual Review, And Budget Controls
+## Current Phase: 6 — Statistics, History, Game Over, And Sharing
 ## Status: PENDING
 
 ### Phase 1 ✅
@@ -36,18 +36,19 @@
 | 3. Lobby + realtime sync | Done | lobby/join pages, RoomCode, ShareLink, PlayerList, gameChannel.ts |
 | 4. Disconnect handling + host transfer | Done | hostTransfer.ts, ConnectionStatus, Edge Function upgrades (round-backstop, presence-scan, room-cleanup), runbooks |
 
-### Phase 5 ⬜
+### Phase 5 ✅
 | Task | Status | Notes |
 |---|---|---|
-| 1. Provider abstraction + circuit breaker | Pending | |
-| 2. AI validation, hinting, competitor gen | Pending | |
-| 3. Manual review + failure degradation | Pending | |
-| 4. Cost + concurrency controls | Pending | |
+| 0. Ground-truth evaluation dataset | Done | 151 Hebrew triples in `tests/eval/ground-truth.json` |
+| 1. Provider abstraction + circuit breaker | Done | `lib/ai/provider.ts`, `claude.ts`, `openai.ts`, `circuitBreaker.ts`, migration 0006 |
+| 2. AI validation, hinting, competitor gen | Done | `lib/ai/validate.ts`, `generate.ts`, `prompts.ts`, `schema.ts`, `contentSafety.ts`, `/api/ai/hint` |
+| 3. Manual review + failure degradation | Done | `manualReview.ts`, results components, runbooks, solo degradation |
+| 4. Cost + concurrency controls | Done | `budget.ts`, `observability/ai.ts`, migration 0007, per-IP/game/concurrent/help limits |
 
-## Verification (Phase 4)
+## Verification (Phase 5)
 - `pnpm typecheck` — passed (0 errors)
 - `pnpm lint` — passed (1 pre-existing warning)
-- `pnpm test` — passed (61 tests, 5 suites)
+- `pnpm test` — passed (89 tests, 9 suites + 3 skipped eval gate)
 
 ## Last Commit SHA
-010c1b7
+fb57bbe
