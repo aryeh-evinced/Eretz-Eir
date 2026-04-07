@@ -237,32 +237,33 @@ export async function submitRound(
 
   logger.info("submitRound: scoring complete", { roundId });
 
-  // ── 6. Write back to DB (best-effort atomic: sequential awaits in try-catch)
-  // There is no built-in multi-table transaction in Supabase JS. We perform
-  // sequential awaits. If one step fails after earlier ones succeed, the DB
-  // may be partially updated. This is documented as best-effort atomic.
+  // ── 6. Write back to DB ────────────────────────────────────────────────────
+  // Batch all answer updates in parallel to avoid N sequential round-trips.
   try {
-    for (const a of answers) {
-      const isValid = validationMap.get(a.id) ?? false;
-      const isUnique = uniquenessMap.get(a.id) ?? false;
-      const scored = scoreMap.get(a.id) ?? { base: 0, speedBonus: 0, total: 0 };
+    const updateResults = await Promise.all(
+      answers.map((a) => {
+        const isValid = validationMap.get(a.id) ?? false;
+        const isUnique = uniquenessMap.get(a.id) ?? false;
+        const scored = scoreMap.get(a.id) ?? { base: 0, speedBonus: 0, total: 0 };
 
-      const { error } = await supabaseAdmin
-        .from("answers")
-        .update({
-          is_valid: isValid,
-          is_unique: isUnique,
-          speed_bonus: scored.speedBonus > 0,
-          score: scored.total,
-        })
-        .eq("id", a.id);
+        return supabaseAdmin
+          .from("answers")
+          .update({
+            is_valid: isValid,
+            is_unique: isUnique,
+            speed_bonus: scored.speedBonus > 0,
+            score: scored.total,
+          })
+          .eq("id", a.id)
+          .then((result) => {
+            if (result.error) {
+              throw new Error(`submitRound: failed to update answer ${a.id}: ${result.error.message}`);
+            }
+          });
+      }),
+    );
 
-      if (error) {
-        throw new Error(`submitRound: failed to update answer ${a.id}: ${error.message}`);
-      }
-    }
-
-    logger.info("submitRound: answers written to DB", { roundId, count: answers.length });
+    logger.info("submitRound: answers written to DB", { roundId, count: updateResults.length });
 
     // Determine review status based on AI validation outcome
     const reviewDecision = shouldEnterManualReview(aiValidationFailed, isSoloMode);

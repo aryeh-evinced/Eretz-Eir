@@ -21,7 +21,6 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminClient();
   const { roundId, answers } = body.data;
 
-  // Get round info
   const { data: round } = await supabase
     .from('rounds')
     .select('id, game_id, status')
@@ -30,7 +29,6 @@ export async function POST(request: NextRequest) {
 
   if (!round) return errorResponse('NOT_FOUND', 'Round not found', 404);
 
-  // Verify participant
   const isParticipant = await verifyParticipant(
     round.game_id,
     auth.userId,
@@ -52,13 +50,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Write answers (update existing empty rows)
+  const submittedAt = new Date().toISOString();
   for (const answer of answers) {
     await supabase
       .from('answers')
       .update({
         answer_text: answer.text,
-        submitted_at: new Date().toISOString(),
+        submitted_at: submittedAt,
       })
       .eq('round_id', roundId)
       .eq('player_id', auth.userId)
@@ -71,7 +69,6 @@ export async function POST(request: NextRequest) {
     count: answers.length,
   });
 
-  // Check if all players have submitted
   const { data: allAnswers } = await supabase
     .from('answers')
     .select('player_id, answer_text')
@@ -90,6 +87,22 @@ export async function POST(request: NextRequest) {
     });
 
     if (allDone) {
+      // Atomically claim the round for scoring: only the first caller that
+      // transitions status from 'playing' to 'scoring' proceeds. This
+      // prevents concurrent "Done!" requests from triggering submitRound twice.
+      const { data: claimed, error: claimError } = await supabase
+        .from('rounds')
+        .update({ ended_by: 'all_done' })
+        .eq('id', roundId)
+        .eq('status', 'playing')
+        .select('id')
+        .single();
+
+      if (claimError || !claimed) {
+        logger.info('Round scoring already claimed by another request', { roundId });
+        return successResponse({ status: 'submitted' });
+      }
+
       try {
         const results = await submitRound(roundId, round.game_id, supabase);
         return successResponse({ status: 'round_complete', results });
