@@ -21,17 +21,11 @@ export const CATEGORY_ICONS: Record<Category, string> = {
   "מקצוע": "💼",
   "זמר/ת": "🎵",
   "אוכל": "🍽️",
-  "צבע": "🎨",
-  "כלי": "🔧",
-  "משחק": "🎮",
   "סרט": "🎬",
   "שיר": "🎶",
   "ספר": "📚",
   "מותג": "🏷️",
   "ספורט": "⚽",
-  "לבוש": "👕",
-  "גוף": "🫀",
-  "ריהוט": "🪑",
 };
 
 export const EXTENDED_CATEGORY_POOL: readonly Category[] = [
@@ -44,15 +38,9 @@ export const EXTENDED_CATEGORY_POOL: readonly Category[] = [
   "מקצוע",
   "זמר/ת",
   "אוכל",
-  "צבע",
-  "כלי",
-  "משחק",
   "סרט",
   "שיר",
   "ספר",
   "מותג",
   "ספורט",
-  "לבוש",
-  "גוף",
-  "ריהוט",
 ] as const;

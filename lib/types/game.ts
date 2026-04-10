@@ -32,17 +32,11 @@ export type Category =
   | "מקצוע"
   | "זמר/ת"
   | "אוכל"
-  | "צבע"
-  | "כלי"
-  | "משחק"
   | "סרט"
   | "שיר"
   | "ספר"
   | "מותג"
-  | "ספורט"
-  | "לבוש"
-  | "גוף"
-  | "ריהוט";
+  | "ספורט";
 
 export type GameMode = "solo" | "multiplayer";
 export type CategoryMode = "fixed" | "custom" | "random";
