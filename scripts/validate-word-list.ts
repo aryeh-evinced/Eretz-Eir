@@ -4,7 +4,7 @@
  *
  * Checks:
  *  - All 22 Hebrew letters present (no final forms)
- *  - All 8 standard categories present per letter
+ *  - All 20 categories present per letter
  *  - ≥10 words per letter/category (warn if <10, fail if <5)
  *  - Every word starts with the correct Hebrew letter
  *
@@ -22,6 +22,8 @@ const EXPECTED_LETTERS = [
 
 const EXPECTED_CATEGORIES = [
   "ארץ", "עיר", "חי", "צומח", "ילד", "ילדה", "מקצוע", "זמר/ת",
+  "אוכל", "צבע", "כלי", "משחק", "סרט", "שיר", "ספר", "מותג",
+  "ספורט", "לבוש", "גוף", "ריהוט",
 ] as const;
 
 const MIN_REQUIRED = 5;
@@ -53,7 +55,7 @@ function main(): void {
 
     const letterData = data[letter];
 
-    // Check all 8 categories per letter
+    // Check all categories per letter
     for (const category of EXPECTED_CATEGORIES) {
       totalEntries++;
 

@@ -35,6 +35,14 @@ test-results/
 playwright-report/
 coverage/
 
+# Generated databases
+data/words.db
+data/words.db-wal
+data/words.db-shm
+
+# Playwright MCP
+.playwright-mcp/
+
 # Misc
 *.tsbuildinfo
 next-env.d.ts

@@ -22,7 +22,27 @@ export type HebrewLetter =
   | "ש"
   | "ת";
 
-export type Category = "ארץ" | "עיר" | "חי" | "צומח" | "ילד" | "ילדה" | "מקצוע" | "זמר/ת";
+export type Category =
+  | "ארץ"
+  | "עיר"
+  | "חי"
+  | "צומח"
+  | "ילד"
+  | "ילדה"
+  | "מקצוע"
+  | "זמר/ת"
+  | "אוכל"
+  | "צבע"
+  | "כלי"
+  | "משחק"
+  | "סרט"
+  | "שיר"
+  | "ספר"
+  | "מותג"
+  | "ספורט"
+  | "לבוש"
+  | "גוף"
+  | "ריהוט";
 
 export type GameMode = "solo" | "multiplayer";
 export type CategoryMode = "fixed" | "custom" | "random";

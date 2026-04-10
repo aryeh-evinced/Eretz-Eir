@@ -9,6 +9,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useGameStore } from "@/stores/gameStore";
 import { usePlayerStore } from "@/stores/playerStore";
 import { CATEGORY_ICONS } from "@/lib/constants/categories";
+import { getRandomWord, validateWithWordList } from "@/lib/game/fallbackWords";
+import { sanitizeAnswer } from "@/lib/game/normalization";
 import type { Category, HelpUsed } from "@/lib/types/game";
 
 interface PlayerResult {
@@ -29,46 +31,39 @@ interface PlayerResult {
   totalScore: number;
 }
 
+type AnswerCell = {
+  text: string;
+  score: number;
+  isValid: boolean;
+  isUnique: boolean;
+  speedBonus: boolean;
+  helpUsed: HelpUsed;
+};
+
+/**
+ * Generate AI competitor answers by drawing real words from the word list.
+ * skipProbability controls how often the competitor leaves a category empty.
+ */
 function generateAIAnswers(
   categories: Category[],
   letter: string,
-): Record<
-  string,
-  {
-    text: string;
-    score: number;
-    isValid: boolean;
-    isUnique: boolean;
-    speedBonus: boolean;
-    helpUsed: HelpUsed;
-  }
-> {
-  const result: Record<
-    string,
-    {
-      text: string;
-      score: number;
-      isValid: boolean;
-      isUnique: boolean;
-      speedBonus: boolean;
-      helpUsed: HelpUsed;
-    }
-  > = {};
+  skipProbability: number,
+): Record<string, AnswerCell> {
+  const result: Record<string, AnswerCell> = {};
   for (const cat of categories) {
-    const hasAnswer = Math.random() > 0.2;
-    const isValid = hasAnswer && Math.random() > 0.15;
-    const isUnique = isValid && Math.random() > 0.3;
+    if (Math.random() < skipProbability) {
+      result[cat] = { text: "", score: 0, isValid: false, isUnique: false, speedBonus: false, helpUsed: "none" };
+      continue;
+    }
+    const word = getRandomWord(letter, cat);
+    if (!word) {
+      result[cat] = { text: "", score: 0, isValid: false, isUnique: false, speedBonus: false, helpUsed: "none" };
+      continue;
+    }
+    const isUnique = Math.random() > 0.3;
     const speedBonus = isUnique && Math.random() > 0.7;
-    const score = !isValid ? 0 : isUnique ? 10 : 5;
-    const bonus = speedBonus ? 3 : 0;
-    result[cat] = {
-      text: hasAnswer ? `${letter}...` : "",
-      score: score + bonus,
-      isValid,
-      isUnique,
-      speedBonus,
-      helpUsed: "none",
-    };
+    const score = (isUnique ? 10 : 5) + (speedBonus ? 3 : 0);
+    result[cat] = { text: word, score, isValid: true, isUnique, speedBonus, helpUsed: "none" };
   }
   return result;
 }
@@ -105,13 +100,11 @@ export default function ResultsPage() {
     const categories = currentRound.categories;
     const letter = currentRound.letter;
 
-    // Player results: mark all as valid/unique for now (placeholder until AI validation)
     const playerAnswers: PlayerResult["answers"] = {};
     let playerTotal = 0;
     for (const cat of categories) {
       const text = answers[cat] ?? "";
-      const hasText = text.trim().length > 0;
-      const isValid = hasText;
+      const isValid = text.trim().length > 0 && validateWithWordList(text, letter, cat);
       const isUnique = isValid;
       const score = !isValid ? 0 : isUnique ? 10 : 5;
       playerAnswers[cat] = {
@@ -133,8 +126,8 @@ export default function ResultsPage() {
       totalScore: playerTotal,
     };
 
-    // AI results (simulated)
-    const noaAnswers = generateAIAnswers(categories, letter);
+    // AI competitor answers from word list with difficulty-based skip rates
+    const noaAnswers = generateAIAnswers(categories, letter, 0.3);
     const noaTotal = Object.values(noaAnswers).reduce((s, a) => s + a.score, 0);
     const noa: PlayerResult = {
       id: "ai-noa",
@@ -144,7 +137,7 @@ export default function ResultsPage() {
       totalScore: noaTotal,
     };
 
-    const yoniAnswers = generateAIAnswers(categories, letter);
+    const yoniAnswers = generateAIAnswers(categories, letter, 0.15);
     const yoniTotal = Object.values(yoniAnswers).reduce(
       (s, a) => s + a.score,
       0,
@@ -157,7 +150,29 @@ export default function ResultsPage() {
       totalScore: yoniTotal,
     };
 
-    return [player, noa, yoni].sort((a, b) => b.totalScore - a.totalScore);
+    // Recompute uniqueness across all players: shared valid answers get 5 pts
+    const allPlayers = [player, noa, yoni];
+    for (const cat of categories) {
+      const validTexts = allPlayers
+        .filter((p) => p.answers[cat]?.isValid && p.answers[cat]?.text)
+        .map((p) => ({ id: p.id, normalized: sanitizeAnswer(p.answers[cat].text) }));
+
+      for (const entry of validTexts) {
+        const isShared = validTexts.some(
+          (other) => other.id !== entry.id && other.normalized === entry.normalized,
+        );
+        if (isShared) {
+          const p = allPlayers.find((pl) => pl.id === entry.id)!;
+          const cell = p.answers[cat];
+          const oldScore = cell.score;
+          cell.isUnique = false;
+          cell.score = 5 + (cell.speedBonus ? 3 : 0);
+          p.totalScore += cell.score - oldScore;
+        }
+      }
+    }
+
+    return allPlayers.sort((a, b) => b.totalScore - a.totalScore);
   }, [currentRound, answers, playerLocalId, playerName, playerAvatar]);
 
   function handleNextRound() {

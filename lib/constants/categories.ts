@@ -20,9 +20,21 @@ export const CATEGORY_ICONS: Record<Category, string> = {
   "ילדה": "👧",
   "מקצוע": "💼",
   "זמר/ת": "🎵",
+  "אוכל": "🍽️",
+  "צבע": "🎨",
+  "כלי": "🔧",
+  "משחק": "🎮",
+  "סרט": "🎬",
+  "שיר": "🎶",
+  "ספר": "📚",
+  "מותג": "🏷️",
+  "ספורט": "⚽",
+  "לבוש": "👕",
+  "גוף": "🫀",
+  "ריהוט": "🪑",
 };
 
-export const EXTENDED_CATEGORY_POOL: readonly string[] = [
+export const EXTENDED_CATEGORY_POOL: readonly Category[] = [
   "ארץ",
   "עיר",
   "חי",

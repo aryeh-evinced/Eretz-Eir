@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Answer, Category, HebrewLetter, RoundStatus, ValidatedAnswer } from "@/lib/types/game";
 import { validateAnswers } from "@/lib/game/validator";
-import { validateAnswersWithWordList } from "@/lib/game/fallbackWords";
 import { computeUniqueness } from "@/lib/game/uniqueness";
 import { scoreAnswer } from "@/lib/game/scoring";
 import { transitionRound } from "@/lib/game/stateMachine";
@@ -120,72 +119,46 @@ export async function submitRound(
     );
   }
 
-  // Map: answerId -> { valid }
+  // Map: answerId -> valid
+  // The hybrid validator checks the word DB first (instant), then AI for misses.
   const validationMap = new Map<string, boolean>();
   let aiValidationFailed = false;
 
   for (const [playerId, playerAnswers] of answersByPlayer.entries()) {
-    // Build answer list — skip null/empty answers
     const answerList = playerAnswers
       .filter((a) => a.answerText !== null && a.answerText.trim() !== "")
-      .map((a) => ({
-        category: a.category,
-        text: a.answerText as string,
-      }));
+      .map((a) => ({ category: a.category, text: a.answerText as string }));
 
-    let aiValidation: Map<string, boolean> | null = null;
+    const validation = new Map<string, boolean>();
 
-    // Try AI validation (batch call for all of this player's answers)
     if (answerList.length > 0) {
       try {
-        const aiResult = await validateAnswers(
-          {
-            roundId,
-            letter: round.letter as HebrewLetter,
-            answers: answerList,
-          },
+        const result = await validateAnswers(
+          { roundId, letter: round.letter as HebrewLetter, answers: answerList },
           supabaseAdmin,
         );
-
-        aiValidation = new Map<string, boolean>();
-        for (const v of aiResult.validations) {
-          aiValidation.set(v.category, v.isValid);
+        for (const v of result.validations) {
+          validation.set(v.category, v.isValid);
         }
-        logger.info("submitRound: AI validation succeeded for player", {
+        logger.info("submitRound: validation complete for player", {
           playerId,
-          validCount: aiResult.validations.filter((v) => v.isValid).length,
+          validCount: result.validations.filter((v) => v.isValid).length,
+          totalChecked: answerList.length,
         });
       } catch (err) {
-        logger.warn("submitRound: AI validation failed, falling back to word-list", {
+        aiValidationFailed = true;
+        logger.warn("submitRound: validation failed for player", {
           playerId,
           error: err instanceof Error ? err.message : String(err),
         });
-        aiValidationFailed = true;
       }
-    }
-
-    // Fallback to word-list if AI validation failed
-    if (!aiValidation) {
-      aiValidationFailed = true;
-      const answerRecord: Record<string, string> = {};
-      for (const a of playerAnswers) {
-        if (a.answerText !== null && a.answerText.trim() !== "") {
-          answerRecord[a.category] = a.answerText;
-        }
-      }
-      const wordListResult = validateAnswersWithWordList(answerRecord, round.letter as string);
-      aiValidation = new Map<string, boolean>();
-      for (const [cat, result] of Object.entries(wordListResult)) {
-        aiValidation.set(cat, result.valid);
-      }
-      logger.debug("submitRound: word-list fallback used for player", { playerId });
     }
 
     for (const a of playerAnswers) {
       if (!a.answerText || a.answerText.trim() === "") {
         validationMap.set(a.id, false);
       } else {
-        validationMap.set(a.id, aiValidation.get(a.category) ?? false);
+        validationMap.set(a.id, validation.get(a.category) ?? false);
       }
     }
   }
